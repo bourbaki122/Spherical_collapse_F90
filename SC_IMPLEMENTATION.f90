@@ -20,7 +20,7 @@ MODULE Global_cosmology
   !Use one_form_cosmology
   !USE non_abelian_cosmology
   !Use EDS_cosmology
-  USE LCDM_cosmology
+   USE LCDM_cosmology
 
 
   !========Global-variables=======!
@@ -654,9 +654,33 @@ DEALLOCATE(z,dz)
 
    END FUNCTION f
 
+ !subroutine a vs t: computes the time evolution of the model
+   
+   subroutine scale_vs_time(a0,dt)
+     
+    integer :: w
+    real(rt) :: a0,dt !initial scale factor and resolution
+    real(rt) :: E_a, dE_da,t,a
+
+    a=a0 
+    t=0.0_rt   
+    open(newunit=w, file="scale_vs_time.dat", status="replace")
+
+     do while(a.lt.1.0_rt)
+    
+      call Exp_func(a,E_a,dE_da)
+      write(w, *) a,t,E_a
+      a=a+(a*E_a*dt)
+      t=t+dt
+     end do 
+
+    close(w)
+
+  
+   end subroutine scale_vs_time
+
+
 END MODULE Spherical_collapse
-
-
 
 
 
@@ -694,7 +718,7 @@ PROGRAM MAIN_KERNEL
 
 WRITE(*,*)"Initial conditions: "
 !call Collapse_time(f_top,c_time,tr_time)
-Call SC_Observables(200,f_botom,f_top)
+!Call SC_Observables(200,f_botom,f_top)
 write(*,*) "initial scale factor:",a_ini
 write(*,*) "initial condition:",f_top
 write(*,*) "turn around:",Dexp(tr_time)
@@ -716,10 +740,12 @@ t0=t0+dt
 !CALL evol_var(t0,m,r,de,w,dlnw) !call from the diferential equations
 !CALL spline_cubic_val(G_spline_numbe,Vec_time,Vec_EOS,Vec_EOSpp,&
                          !t0,Eos_ws,Eosp_ws,Eospp_ws) !call from the spline
-WRITE(o,*) 1.0_rt/Dexp(t0),m,r,de,w,dlnw,Eos_ws,abs(Eos_ws-w)
+!WRITE(o,*) 1.0_rt/Dexp(t0),m,r,de,w,dlnw,Eos_ws,abs(Eos_ws-w)
 END DO
 
 CLOSE(o)
+
+call scale_vs_time(0.1_rt,0.001_rt)
 
 WRITE(*,*) "Densities today..."
 WRITE(*,*) "Matter:",G_m0_density
