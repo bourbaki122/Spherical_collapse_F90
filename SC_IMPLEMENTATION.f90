@@ -114,8 +114,8 @@ MODULE Cosmology_func
 CONTAINS
 
 ! Exp_func := computes the expansion function, and its derivative, notice
-! that like the computation of g_func cost, it is better to compute it the
-!minima amount of times
+! that like the evaluation of g_func is expensive, turns better to call it the
+! minima amount of times
 
   SUBROUTINE Exp_func(a,E_a,dEda)
 
@@ -137,17 +137,27 @@ CONTAINS
 
     IF(Spline_model==1) THEN
 
-    CALL g_function(a,ga) !g_function
-    E_a=DSqrt((Omega_M0/(a**3))+(Omega_R0/(a**4)) + &
-    (Omega_K0/(a**2))+(Omega_DE0*ga))
+    !==============================================================================
+    !Waning: in this definition we neglect any radiation and curvature contributions
+    !for cosmologies with radiation and curvature uncomment bellow.
+    !===============================================================================
+
+    CALL g_function(a,ga) !dark energy component
+    E_a=DSqrt((Omega_M0/(a**3))+(Omega_DE0*ga))
+
+    !uncomment this for cosmologies with radiation and curvature.
+    !E_a=DSqrt((Omega_M0/(a**3))+(Omega_K0/(a**2))+(Omega_R0/(a**4))+(Omega_DE0*ga))
 
     CALL spline_cubic_val(G_spline_numbe,Vec_time,Vec_EOS,Vec_EOSpp,&
                           Dlog(a),Eos,wp,wpp)
 
-    dgda=-3.0_rt*ga*(EOS+1.0_rt)/a ! derivative
+    dgda=-3.0_rt*ga*(EOS+1.0_rt)/a ! derivative of the dark-energy component
 
-    dEda=(1.0_rt/(2*E_a))*((-3.0_rt*Omega_M0/(a**4))+(-2.0_rt*Omega_K0/(a**3)) &
-         +(-4.0*Omega_R0/(a**5))+(Omega_DE0*dgda))
+    dEda=(1.0_rt/(2*E_a))*((-3.0_rt*Omega_M0/(a**4))+(Omega_DE0*dgda))
+
+    !uncomment this for cosmologies with radiation and curvature.    
+    !dEda=(1.0_rt/(2*E_a))*((-3.0_rt*Omega_M0/(a**4))+(-2.0_rt*Omega_K0/(a**3)) &
+    !+(-4.0*Omega_R0/(a**5))+(Omega_DE0*dgda))
 
     ELSE IF(Spline_model==0) THEN
 
@@ -157,7 +167,7 @@ CONTAINS
 
   END SUBROUTINE Exp_func
 
-  !SUBROUTINE g_function: computes the g_function of the model
+  !SUBROUTINE g_function: computes the dark energy density contribution of the model
   !notice that if the EOS is complicated we must call the splines
   !funtion for avoid the multiple integrations.....
 
@@ -181,7 +191,6 @@ CONTAINS
 
 END MODULE Cosmology_func
 
-
 !======================================================
 !In this module are a number of different implementations of the
 !S.C model, notice that different implementations bring some
@@ -191,18 +200,19 @@ END MODULE Cosmology_func
 MODULE Spherical_collapse
   USE nrtype
   USE Cosmology_func
-  use fgsl
-  use, intrinsic :: iso_c_binding
+  !use fgsl
+  !use, intrinsic :: iso_c_binding
   
   IMPLICIT NONE
 
   !====Global-Quantities=======================!
   REAL(rt) :: slope_G, lna0_G, Lnac_G,x_G,Target_global
+  Real(rt) :: delta_ini ! only for the radious implementation
   !=================================================
 
   !===parameters like the numerical infinity and things like that
-  REAL(rt), PARAMETER :: Eps_infinity=1.0e10_rt
-  REAL(rt), PARAMETER :: a_ini=1.0e-5_rt 
+  REAL(rt), PARAMETER :: Eps_infinity=1.0e10_rt ! numerical inifinity
+  REAL(rt), PARAMETER :: a_ini=1.0e-5_rt !initial scale factor
   REAL(rt), PARAMETER :: Eps_Zero=1.0_rt/Eps_infinity
   REAL(rt) :: abserr=1.0e-7_rt!DSqrt(EPSILON(abserr)) !acepted errors for the propagation
   REAL(rt) :: relerr=1.0e-7_rt!Dsqrt(EPSILON(relerr)) !acepted errors for th propagation
@@ -274,7 +284,7 @@ CONTAINS
     dx_out(2)=-((2.0_rt+(dE_lnada*a/E_lna))*x(2)) &
               +((2.0_rt-(4.0_rt/3*(1+x(1))))*(x(2)**2.0_rt)/x(1)) &
               -((3.0_rt/2)*(G_m0_density/((a**3)*(E_lna**2)))*(x(1)+1))
-  !write(*,*) x(1)
+
   END SUBROUTINE F_Nl_log
 
   
@@ -301,7 +311,7 @@ CONTAINS
    
  END SUBROUTINE Ftheta  
  
- 
+  
  Subroutine Ftheta_linear(lna,x,dx_out)
   
    Real(rt), DIMENSION(2) :: x, dx_out
@@ -321,10 +331,33 @@ CONTAINS
    
  END SUBROUTINE Ftheta_linear
  
- !==========================================================================!
- !==========================================================================!
- !==========================================================================!
+
+ !===================================================================
+ !Radious implementations
+ !=================================================================
+
+ subroutine new_radious_evol(lna,z,dz)
+   real(rt), DIMENSION(2) :: z, dz 
+   real(rt) :: E, dE 
+   real(rt) :: lna, a
+
+   E=0
+   dE=0
+   a=Dexp(lna)
+   
+   call Exp_func(a,E,dE)
+   
+   delta=(delta_ini+1.0_rt)/((((a_ini/a)*z(2))+1)**3) - 1.0_rt
+
+   dz(1)=(-a*dE/E)z(1)+((1.0_rt+(-a*dE/E)-(1.0_rt/2)*Omega_M0*delta/((a**3)*(E**2)))*z(2)) &
+   -(1.0_rt/2)*Omega_M0*delta/((a**2)*(E**2)*a_ini)
+   dz(2)=z(1)
+
+ End subroutine
  
+ !==========================================================
+ !==========================================================
+ !==========================================================
  
  !=========Power-law=========================================!
  subroutine power_law(a_0,n1,n2)
@@ -395,33 +428,33 @@ CALL timestamp()
   end subroutine SC_Observables  
   
   
-  subroutine Target_conditions
+ !subroutine Target_conditions
   
-  real(rt) :: result, abserr
-  integer(fgsl_int) :: status
-  type(fgsl_function) :: pwr
-  type(c_ptr) :: param_unused
-  real(rt) initial_inverse,final_inverse
+ ! real(rt) :: result, abserr
+ ! integer(fgsl_int) :: status
+ ! type(fgsl_function) :: pwr
+!  type(c_ptr) :: param_unused
+ ! real(rt) initial_inverse,final_inverse
   
-  Target_global=0.0_rt
-  initial_inverse=100.0_rt
-  final_inverse=0.0_rt
+ ! Target_global=0.0_rt
+ ! initial_inverse=100.0_rt
+ ! final_inverse=0.0_rt
   !param_unused=0
   
-  pwr = fgsl_function_init(f, c_null_ptr)
+ ! pwr = fgsl_function_init(f, c_null_ptr)
   
-  status = fgsl_deriv_central (pwr, initial_inverse, 1.E-8_fgsl_double,result, abserr)
-   write(*,*) "initial f:",initial_inverse
-  final_inverse=f(initial_inverse,param_unused)
-  write(*,*) "collapse ini_f: ",final_inverse
-  final_inverse=initial_inverse-(final_inverse/result)
-   write(*,*) "final invese: ", final_inverse
-   write(*,*) "collapse final invese: ", f(final_inverse,param_unused) 
+ ! status = fgsl_deriv_central (pwr, initial_inverse, 1.E-8_fgsl_double,result, abserr)
+ !  write(*,*) "initial f:",initial_inverse
+ ! final_inverse=f(initial_inverse,param_unused)
+ ! write(*,*) "collapse ini_f: ",final_inverse
+ ! final_inverse=initial_inverse-(final_inverse/result)
+!   write(*,*) "final invese: ", final_inverse
+ !  write(*,*) "collapse final invese: ", f(final_inverse,param_unused) 
   
-  write(*,*) "the results"
-  write(*,*) 
+ ! write(*,*) "the results"
+ ! write(*,*) 
   
-  end subroutine Target_conditions
+ ! end subroutine Target_conditions
   
   
   subroutine Collapse_time(f_in,lna_out,lna_tr)
